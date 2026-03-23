@@ -17,6 +17,7 @@ jobs:
         run: |
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           cp provision.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
+          echo "Profile installed"
       
       - name: Install certificate
         run: |
@@ -25,6 +26,8 @@ jobs:
           security unlock-keychain -p "" build.keychain
           security import Certificate.p12 -k build.keychain -P ${{ secrets.P12_PASSWORD }} -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+          echo "Certificate installed"
+          security find-identity -v
       
       - name: Build with Swift Package Manager
         run: |
@@ -43,7 +46,7 @@ jobs:
               <key>CFBundleExecutable</key>
               <string>CalculatorApp</string>
               <key>CFBundleIdentifier</key>
-              <string>com.example.calculator</string>
+              <string>4PRJCD67F5.app.panda639.papaya6365</string>
               <key>CFBundleName</key>
               <string>Calculator</string>
               <key>CFBundlePackageType</key>
@@ -57,16 +60,19 @@ jobs:
           </dict>
           </plist>
           EOF
+          echo "App bundle created"
       
       - name: Sign app
         run: |
           CERT_ID=$(security find-identity -v -p codesigning | grep "iPhone" | head -1 | awk -F '"' '{print $2}')
           echo "Using certificate: $CERT_ID"
           codesign -f -s "$CERT_ID" Payload/CalculatorApp.app
+          echo "App signed"
       
       - name: Create IPA
         run: |
           zip -r CalculatorApp.ipa Payload
+          echo "IPA created"
       
       - name: Upload IPA
         uses: actions/upload-artifact@v4
