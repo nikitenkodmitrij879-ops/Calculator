@@ -249,7 +249,7 @@ jobs:
               }
           }
           
-          UIApplicationMain(CommandLine.argc, CommandLine.unsafeArgv, nil, NSStringFromClass(AppDelegate.self))
+          _ = UIApplicationMain(CommandLine.argc, CommandLine.unsafeArgv, nil, NSStringFromClass(AppDelegate.self))
           EOF
       
       - name: Compile for iOS
@@ -268,6 +268,7 @@ jobs:
           
           chmod +x build/Calculator
           echo "✅ Compilation successful"
+          file build/Calculator
       
       - name: Create app bundle
         run: |
@@ -301,6 +302,7 @@ jobs:
           
           echo "APPL????" > Payload/Calculator.app/PkgInfo
           echo "✅ App bundle created"
+          ls -la Payload/Calculator.app/
       
       - name: Create IPA
         run: |
