@@ -1,7 +1,6 @@
 import SwiftUI
 import UIKit
 import CoreHaptics
-import AVFoundation
 
 // MARK: - Основное приложение
 @main
@@ -22,7 +21,6 @@ struct ContentView: View {
     @State private var history: [String] = []
     @State private var showHistory = false
     @State private var decimalPlaces = 6
-    @State private var isLandscape = false
     @State private var hapticEngine: CHHapticEngine?
     
     enum Operation {
@@ -82,7 +80,7 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                         .padding(.horizontal, 20)
                         .padding(.bottom, 20)
-                        .contentTransition(.numericText())
+                        .animation(.easeInOut, value: display)
                     
                     // Кнопки
                     if isLandscape {
@@ -106,19 +104,13 @@ struct ContentView: View {
                     }
                 }
                 .padding(.bottom, 20)
-                
-                // История
-                if showHistory {
-                    HistoryView(history: history, onClose: { showHistory = false })
-                        .transition(.move(edge: .bottom))
-                }
+            }
+            .sheet(isPresented: $showHistory) {
+                HistorySheet(history: history)
             }
         }
         .onAppear {
             setupHaptics()
-        }
-        .sheet(isPresented: $showHistory) {
-            HistorySheet(history: history)
         }
     }
     
@@ -239,6 +231,9 @@ struct PortraitButtonGrid: View {
             if let value = Double(display) {
                 display = String(value / 100)
             }
+            
+        default:
+            break
         }
     }
     
@@ -268,7 +263,6 @@ struct PortraitButtonGrid: View {
             }
         }
         
-        // Умное округление
         if decimalPlaces == 0 {
             display = String(format: "%.0f", result)
         } else {
@@ -320,41 +314,126 @@ struct LandscapeButtonGrid: View {
         switch button {
         case .sin:
             if let value = Double(display) {
-                display = String(sin(value * .pi / 180))
+                let result = sin(value * .pi / 180)
+                display = formatValue(result)
             }
         case .cos:
             if let value = Double(display) {
-                display = String(cos(value * .pi / 180))
+                let result = cos(value * .pi / 180)
+                display = formatValue(result)
             }
         case .tan:
             if let value = Double(display) {
-                display = String(tan(value * .pi / 180))
+                let result = tan(value * .pi / 180)
+                display = formatValue(result)
             }
         case .sqrt:
             if let value = Double(display), value >= 0 {
-                display = String(sqrt(value))
+                let result = sqrt(value)
+                display = formatValue(result)
             }
         case .log:
             if let value = Double(display), value > 0 {
-                display = String(log10(value))
+                let result = log10(value)
+                display = formatValue(result)
             }
         case .pi:
             display = String(Double.pi)
             shouldResetDisplay = true
+        case .clear:
+            display = "0"
+            previousNumber = 0
+            currentOperation = nil
+            shouldResetDisplay = false
+        case .negative:
+            if let value = Double(display) {
+                display = String(value * -1)
+            }
+        case .percent:
+            if let value = Double(display) {
+                display = String(value / 100)
+            }
+        case .equals:
+            if let operation = currentOperation {
+                let current = Double(display) ?? 0
+                var result: Double = 0
+                switch operation {
+                case .add: result = previousNumber + current
+                case .subtract: result = previousNumber - current
+                case .multiply: result = previousNumber * current
+                case .divide: result = current != 0 ? previousNumber / current : 0
+                }
+                display = formatValue(result)
+                previousNumber = result
+                currentOperation = nil
+                shouldResetDisplay = true
+            }
         default:
-            // Стандартные кнопки
+            // Стандартные кнопки обрабатываются здесь
+            handleStandardButton(button)
+        }
+    }
+    
+    func formatValue(_ value: Double) -> String {
+        if decimalPlaces == 0 {
+            return String(format: "%.0f", value)
+        }
+        return String(format: "%.\(decimalPlaces)f", value)
+            .replacingOccurrences(of: "\\.?0+$", with: "", options: .regularExpression)
+    }
+    
+    func handleStandardButton(_ button: LiquidButton) {
+        switch button {
+        case .zero, .one, .two, .three, .four, .five, .six, .seven, .eight, .nine:
+            if shouldResetDisplay {
+                display = button.rawValue
+                shouldResetDisplay = false
+            } else {
+                display = display == "0" ? button.rawValue : display + button.rawValue
+            }
+        case .decimal:
+            if shouldResetDisplay {
+                display = "0."
+                shouldResetDisplay = false
+            } else if !display.contains(".") {
+                display += "."
+            }
+        case .add:
+            calculateStandard()
+            currentOperation = .add
+            shouldResetDisplay = true
+        case .subtract:
+            calculateStandard()
+            currentOperation = .subtract
+            shouldResetDisplay = true
+        case .multiply:
+            calculateStandard()
+            currentOperation = .multiply
+            shouldResetDisplay = true
+        case .divide:
+            calculateStandard()
+            currentOperation = .divide
+            shouldResetDisplay = true
+        default:
             break
         }
-        
-        // Форматирование результата
-        if let value = Double(display) {
-            if decimalPlaces == 0 {
-                display = String(format: "%.0f", value)
-            } else {
-                display = String(format: "%.\(decimalPlaces)f", value)
-                    .replacingOccurrences(of: "\\.?0+$", with: "", options: .regularExpression)
-            }
+    }
+    
+    func calculateStandard() {
+        let current = Double(display) ?? 0
+        guard let operation = currentOperation else {
+            previousNumber = current
+            return
         }
+        var result: Double = 0
+        switch operation {
+        case .add: result = previousNumber + current
+        case .subtract: result = previousNumber - current
+        case .multiply: result = previousNumber * current
+        case .divide: result = current != 0 ? previousNumber / current : 0
+        }
+        display = formatValue(result)
+        previousNumber = result
     }
 }
 
@@ -446,42 +525,5 @@ struct HistorySheet: View {
                 }
             }
         }
-    }
-}
-
-struct HistoryView: View {
-    let history: [String]
-    let onClose: () -> Void
-    
-    var body: some View {
-        VStack {
-            HStack {
-                Text("История")
-                    .font(.title2)
-                    .foregroundColor(.white)
-                Spacer()
-                Button(action: onClose) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(.white.opacity(0.7))
-                }
-            }
-            .padding()
-            
-            ScrollView {
-                ForEach(history.reversed(), id: \.self) { entry in
-                    Text(entry)
-                        .font(.system(.body, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.8))
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                        .padding(.horizontal)
-                        .padding(.vertical, 4)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.ultraThinMaterial)
-        .cornerRadius(20)
-        .padding()
     }
 }
