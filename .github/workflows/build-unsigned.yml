@@ -1,4 +1,4 @@
-name: Build Unsigned IPA
+name: Build Unsigned IPA (Fixed)
 
 on:
   workflow_dispatch:
@@ -22,7 +22,7 @@ jobs:
           print("╚══════════════════════════════════╝")
           print("")
           print("Введите выражение (например: 5 + 3)")
-          print("Команды: exit - выход, clear - очистить")
+          print("Команды: exit - выход")
           print("")
           
           while true {
@@ -34,11 +34,6 @@ jobs:
               if input.lowercased() == "exit" {
                   print("До свидания!")
                   break
-              }
-              
-              if input.lowercased() == "clear" {
-                  print("\n" * 20)
-                  continue
               }
               
               if input.isEmpty {
@@ -96,7 +91,7 @@ jobs:
           }
           EOF
           
-          echo "main.swift создан"
+          echo "✅ main.swift создан"
           cat Sources/main.swift | head -5
       
       - name: Create Package.swift
@@ -119,7 +114,7 @@ jobs:
           )
           EOF
           
-          echo "Package.swift создан"
+          echo "✅ Package.swift создан"
       
       - name: Build for iOS
         run: |
@@ -140,6 +135,7 @@ jobs:
           if [ -f "build/CalculatorApp" ]; then
             echo "✅ Компиляция успешна!"
             ls -la build/CalculatorApp
+            file build/CalculatorApp
           else
             echo "❌ Ошибка компиляции"
             exit 1
@@ -193,6 +189,7 @@ jobs:
           
           echo "✅ App bundle создан"
           ls -la Payload/CalculatorApp.app/
+          file Payload/CalculatorApp.app/CalculatorApp
       
       - name: Create IPA
         run: |
