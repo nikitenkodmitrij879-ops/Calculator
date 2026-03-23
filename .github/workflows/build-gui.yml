@@ -1,0 +1,63 @@
+name: Build GUI Calculator
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Build iOS App
+        run: |
+          # Компилируем
+          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+          mkdir -p build
+          
+          swiftc Sources/main.swift \
+            -sdk "$SDK_PATH" \
+            -target arm64-apple-ios15.0 \
+            -o build/CalculatorApp \
+            -emit-executable \
+            -framework UIKit \
+            -framework SwiftUI \
+            -parse-as-library
+          
+          if [ -f "build/CalculatorApp" ]; then
+            echo "✅ Компиляция успешна!"
+          else
+            echo "❌ Ошибка компиляции"
+            exit 1
+          fi
+      
+      - name: Create app bundle
+        run: |
+          mkdir -p Payload/CalculatorApp.app
+          
+          # Копируем бинарник
+          cp build/CalculatorApp Payload/CalculatorApp.app/CalculatorApp
+          
+          # Копируем Info.plist
+          cp Info.plist Payload/CalculatorApp.app/
+          
+          # Создаем PkgInfo
+          echo "APPL????" > Payload/CalculatorApp.app/PkgInfo
+          
+          echo "✅ App bundle создан"
+      
+      - name: Create IPA
+        run: |
+          cd Payload
+          zip -r ../CalculatorApp.ipa .
+          cd ..
+          echo "✅ IPA создан"
+      
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: CalculatorApp
+          path: CalculatorApp.ipa
+          retention-days: 30
