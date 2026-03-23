@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "CalculatorApp",
+    name: "LiquidGlassCalculator",
     platforms: [
         .iOS(.v15)
     ],
