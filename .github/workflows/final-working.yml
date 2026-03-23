@@ -16,6 +16,7 @@ jobs:
           cat > main.swift << 'EOF'
           import UIKit
           
+          @main
           class AppDelegate: UIResponder, UIApplicationDelegate {
               var window: UIWindow?
               
@@ -248,8 +249,6 @@ jobs:
                   newNumber = true
               }
           }
-          
-          _ = UIApplicationMain(CommandLine.argc, CommandLine.unsafeArgv, nil, NSStringFromClass(AppDelegate.self))
           EOF
       
       - name: Compile for iOS
@@ -266,9 +265,14 @@ jobs:
             -framework Foundation \
             -parse-as-library
           
-          chmod +x build/Calculator
-          echo "✅ Compilation successful"
-          file build/Calculator
+          if [ -f "build/Calculator" ]; then
+            chmod +x build/Calculator
+            echo "✅ Compilation successful"
+            file build/Calculator
+          else
+            echo "❌ Compilation failed"
+            exit 1
+          fi
       
       - name: Create app bundle
         run: |
@@ -303,6 +307,7 @@ jobs:
           echo "APPL????" > Payload/Calculator.app/PkgInfo
           echo "✅ App bundle created"
           ls -la Payload/Calculator.app/
+          file Payload/Calculator.app/Calculator
       
       - name: Create IPA
         run: |
@@ -311,6 +316,7 @@ jobs:
           cd ..
           echo "✅ IPA created"
           ls -la Calculator.ipa
+          unzip -l Calculator.ipa | head -10
       
       - name: Upload IPA
         uses: actions/upload-artifact@v4
