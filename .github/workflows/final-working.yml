@@ -11,12 +11,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       
-      - name: Create Simple UI Calculator
+      - name: Create Calculator App
         run: |
           cat > main.swift << 'EOF'
           import UIKit
           
-          @UIApplicationMain
           class AppDelegate: UIResponder, UIApplicationDelegate {
               var window: UIWindow?
               
@@ -249,16 +248,28 @@ jobs:
                   newNumber = true
               }
           }
+          
+          UIApplicationMain(CommandLine.argc, CommandLine.unsafeArgv, nil, NSStringFromClass(AppDelegate.self))
           EOF
       
-      - name: Compile
+      - name: Compile for iOS
         run: |
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
           mkdir -p build
-          swiftc main.swift -sdk "$SDK" -target arm64-apple-ios15.0 -o build/Calculator -emit-executable -framework UIKit -framework Foundation
+          
+          swiftc main.swift \
+            -sdk "$SDK" \
+            -target arm64-apple-ios15.0 \
+            -o build/Calculator \
+            -emit-executable \
+            -framework UIKit \
+            -framework Foundation \
+            -parse-as-library
+          
           chmod +x build/Calculator
+          echo "✅ Compilation successful"
       
-      - name: Create IPA
+      - name: Create app bundle
         run: |
           mkdir -p Payload/Calculator.app
           cp build/Calculator Payload/Calculator.app/Calculator
@@ -289,9 +300,17 @@ jobs:
           EOF
           
           echo "APPL????" > Payload/Calculator.app/PkgInfo
-          cd Payload && zip -r ../Calculator.ipa . && cd ..
+          echo "✅ App bundle created"
       
-      - name: Upload
+      - name: Create IPA
+        run: |
+          cd Payload
+          zip -r ../Calculator.ipa .
+          cd ..
+          echo "✅ IPA created"
+          ls -la Calculator.ipa
+      
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: Calculator
