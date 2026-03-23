@@ -1,33 +1,14 @@
-name: Build IPA
+name: Build Unsigned IPA
 
 on:
-  push:
-    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: macos-latest
-    
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
-      
-      - name: Install provisioning profile
-        run: |
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          cp provision.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
-          echo "Profile installed"
-      
-      - name: Install certificate
-        run: |
-          security create-keychain -p "" build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p "" build.keychain
-          security import Certificate.p12 -k build.keychain -P ${{ secrets.P12_PASSWORD }} -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
-          echo "Certificate installed"
-          security find-identity -v
       
       - name: Build with Swift Package Manager
         run: |
@@ -60,22 +41,13 @@ jobs:
           </dict>
           </plist>
           EOF
-          echo "App bundle created"
       
-      - name: Sign app
+      - name: Create IPA (unsigned)
         run: |
-          CERT_ID=$(security find-identity -v -p codesigning | grep "iPhone" | head -1 | awk -F '"' '{print $2}')
-          echo "Using certificate: $CERT_ID"
-          codesign -f -s "$CERT_ID" Payload/CalculatorApp.app
-          echo "App signed"
-      
-      - name: Create IPA
-        run: |
-          zip -r CalculatorApp.ipa Payload
-          echo "IPA created"
+          zip -r CalculatorApp-unsigned.ipa Payload
       
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: CalculatorApp
-          path: CalculatorApp.ipa
+          name: CalculatorApp-Unsigned
+          path: CalculatorApp-unsigned.ipa
