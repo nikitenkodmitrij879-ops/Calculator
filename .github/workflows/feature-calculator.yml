@@ -1,4 +1,4 @@
-name: Feature Calculator IPA
+name: Full Feature Calculator IPA
 
 on:
   workflow_dispatch:
@@ -16,7 +16,6 @@ jobs:
           cat > main.swift << 'EOF'
           import UIKit
           
-          @main
           class AppDelegate: UIResponder, UIApplicationDelegate {
               var window: UIWindow?
               
@@ -29,31 +28,28 @@ jobs:
           }
           
           class CalculatorViewController: UIViewController {
-              // Display
               private var displayLabel: UILabel!
               private var historyLabel: UILabel!
-              
-              // Calculator state
               private var currentNumber = "0"
               private var previousNumber: Double = 0
-              private var currentOperation: String? = nil
+              private var currentOperation: String?
               private var newNumber = true
               private var decimalPlaces = 6
-              private var history: [String] = []
               private var isLandscape = false
-              
-              // Scientific mode
               private var isScientificMode = false
               private var mainButtons: [UIButton] = []
               private var sciButtons: [UIButton] = []
+              private var pendingPower: Double = 0
               
               override func viewDidLoad() {
                   super.viewDidLoad()
                   view.backgroundColor = .black
                   setupDisplay()
                   setupHistoryLabel()
-                  setupButtons()
+                  createMainButtons()
+                  createScientificButtons()
                   setupOrientationObserver()
+                  updateButtonsLayout()
               }
               
               override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
@@ -89,7 +85,7 @@ jobs:
                   historyLabel = UILabel()
                   historyLabel.text = ""
                   historyLabel.textColor = .gray
-                  historyLabel.font = UIFont.monospacedDigitSystemFont(ofSize: 16, weight: .regular)
+                  historyLabel.font = UIFont.monospacedDigitSystemFont(ofSize: 14, weight: .regular)
                   historyLabel.textAlignment = .right
                   historyLabel.numberOfLines = 2
                   historyLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -103,19 +99,13 @@ jobs:
                   ])
               }
               
-              func setupButtons() {
-                  createMainButtons()
-                  createScientificButtons()
-                  updateButtonsLayout()
-              }
-              
               func createMainButtons() {
                   let mainTitles = [
                       ["AC", "+/-", "%", "÷"],
                       ["7", "8", "9", "×"],
                       ["4", "5", "6", "-"],
                       ["1", "2", "3", "+"],
-                      ["0", ".", "=", "科学"]
+                      ["0", ".", "=", "🔬"]
                   ]
                   
                   for row in mainTitles {
@@ -132,11 +122,11 @@ jobs:
                   let sciTitles = [
                       ["sin", "cos", "tan", "√", "π"],
                       ["log", "ln", "x²", "1/x", "!"],
-                      ["(", ")", "e", "xʸ", "←"],
+                      ["e", "xʸ", "(", ")", "←"],
                       ["7", "8", "9", "÷", "AC"],
                       ["4", "5", "6", "×", "%"],
                       ["1", "2", "3", "-", "+/-"],
-                      ["0", ".", "=", "+", "科学"]
+                      ["0", ".", "=", "+", "🔬"]
                   ]
                   
                   for row in sciTitles {
@@ -154,7 +144,7 @@ jobs:
                   let button = UIButton(type: .system)
                   button.setTitle(title, for: .normal)
                   button.setTitleColor(.white, for: .normal)
-                  button.titleLabel?.font = UIFont.systemFont(ofSize: title.count > 2 ? 20 : 28, weight: .medium)
+                  button.titleLabel?.font = UIFont.systemFont(ofSize: title.count > 2 ? 18 : 28, weight: .medium)
                   button.backgroundColor = buttonColor(for: title)
                   button.layer.cornerRadius = 35
                   button.translatesAutoresizingMaskIntoConstraints = false
@@ -166,9 +156,9 @@ jobs:
                       return .orange
                   } else if title == "AC" || title == "+/-" || title == "%" || title == "←" {
                       return UIColor(white: 0.3, alpha: 1)
-                  } else if title == "科学" {
+                  } else if title == "🔬" {
                       return UIColor(white: 0.2, alpha: 1)
-                  } else if title.count > 2 {
+                  } else if title.count > 2 && title != "🔬" {
                       return UIColor(white: 0.25, alpha: 1)
                   } else {
                       return UIColor(white: 0.2, alpha: 1)
@@ -189,27 +179,25 @@ jobs:
                   if show {
                       for button in mainButtons { button.isHidden = true }
                       for button in sciButtons { button.isHidden = false }
-                      layoutButtons(sciButtons)
+                      layoutButtons(sciButtons, columns: 5)
                   } else {
                       for button in sciButtons { button.isHidden = true }
                       for button in mainButtons { button.isHidden = false }
-                      layoutButtons(mainButtons)
+                      layoutButtons(mainButtons, columns: 4)
                   }
               }
               
-              func layoutButtons(_ buttons: [UIButton]) {
+              func layoutButtons(_ buttons: [UIButton], columns: Int) {
                   let screenWidth = view.bounds.width
-                  let columns = isLandscape ? 5 : 4
                   let spacing: CGFloat = 10
-                  let buttonHeight: CGFloat = 70
+                  let buttonHeight: CGFloat = 65
                   let buttonWidth = (screenWidth - CGFloat(columns + 1) * spacing) / CGFloat(columns)
                   
-                  var index = 0
-                  for button in buttons {
+                  for (index, button) in buttons.enumerated() {
                       let row = index / columns
                       let col = index % columns
                       let x = spacing + CGFloat(col) * (buttonWidth + spacing)
-                      let y = view.bounds.height - CGFloat(buttons.count / columns - row) * (buttonHeight + spacing) - 100
+                      let y = view.bounds.height - CGFloat(buttons.count / columns - row) * (buttonHeight + spacing) - 80
                       
                       var width = buttonWidth
                       if button.title(for: .normal) == "0" {
@@ -218,7 +206,6 @@ jobs:
                       
                       button.frame = CGRect(x: x, y: y, width: width, height: buttonHeight)
                       button.layer.cornerRadius = buttonHeight / 2
-                      index += 1
                   }
               }
               
@@ -233,7 +220,7 @@ jobs:
               @objc func buttonTapped(_ sender: UIButton) {
                   let title = sender.title(for: .normal) ?? ""
                   
-                  if title == "科学" {
+                  if title == "🔬" {
                       showScientificMode(true)
                       return
                   }
@@ -244,7 +231,7 @@ jobs:
               @objc func scientificTapped(_ sender: UIButton) {
                   let title = sender.title(for: .normal) ?? ""
                   
-                  if title == "科学" {
+                  if title == "🔬" {
                       showScientificMode(false)
                       return
                   }
@@ -295,7 +282,6 @@ jobs:
                           }
                           
                           let historyEntry = "\(formatValue(previousNumber)) \(operation) \(formatValue(value)) = \(formatValue(result))"
-                          history.append(historyEntry)
                           historyLabel.text = historyEntry
                           
                           currentNumber = formatValue(result)
@@ -335,25 +321,34 @@ jobs:
                   
                   guard let value = Double(currentNumber) else { return }
                   var result: Double = 0
+                  var operationName = label
                   
                   switch label {
-                  case "sin": result = sin(value * .pi / 180)
-                  case "cos": result = cos(value * .pi / 180)
-                  case "tan": result = tan(value * .pi / 180)
-                  case "√": result = value >= 0 ? sqrt(value) : 0
-                  case "π": result = Double.pi
-                  case "log": result = value > 0 ? log10(value) : 0
-                  case "ln": result = value > 0 ? log(value) : 0
-                  case "x²": result = value * value
-                  case "1/x": result = value != 0 ? 1 / value : 0
+                  case "sin": result = sin(value * .pi / 180); operationName = "sin"
+                  case "cos": result = cos(value * .pi / 180); operationName = "cos"
+                  case "tan": result = tan(value * .pi / 180); operationName = "tan"
+                  case "√": result = value >= 0 ? sqrt(value) : 0; operationName = "√"
+                  case "π": result = Double.pi; operationName = "π"
+                  case "log": result = value > 0 ? log10(value) : 0; operationName = "log"
+                  case "ln": result = value > 0 ? log(value) : 0; operationName = "ln"
+                  case "x²": result = value * value; operationName = "x²"
+                  case "1/x": result = value != 0 ? 1 / value : 0; operationName = "1/x"
+                  case "!":
+                      var fact: Double = 1
+                      for i in 1...Int(value) { fact *= Double(i) }
+                      result = fact
+                      operationName = "!"
+                  case "e": result = M_E; operationName = "e"
                   case "xʸ":
-                      if let op = currentOperation, op == "xʸ" {
+                      if currentOperation == "xʸ" {
                           result = pow(previousNumber, value)
                           currentOperation = nil
+                          operationName = "xʸ"
                       } else {
                           previousNumber = value
                           currentOperation = "xʸ"
                           newNumber = true
+                          historyLabel.text = "\(formatValue(previousNumber)) ^"
                           return
                       }
                   case "←":
@@ -364,23 +359,30 @@ jobs:
                       }
                       displayLabel.text = currentNumber
                       return
-                  case "e": result = M_E
-                  case "!":
-                      var fact: Double = 1
-                      for i in 1...Int(value) { fact *= Double(i) }
-                      result = fact
+                  case "(":
+                      currentNumber = "("
+                      newNumber = true
+                      return
+                  case ")":
+                      currentNumber = ")"
+                      newNumber = true
+                      return
                   default:
                       handleButton(label)
                       return
                   }
                   
                   let formatted = formatValue(result)
-                  history.append("\(label}(\(currentNumber)) = \(formatted)")
+                  let historyEntry = "\(operationName)(\(currentNumber)) = \(formatted)"
+                  historyLabel.text = historyEntry
+                  
                   currentNumber = formatted
                   displayLabel.text = formatted
                   newNumber = true
               }
           }
+          
+          UIApplicationMain(CommandLine.argc, CommandLine.unsafeArgv, nil, NSStringFromClass(AppDelegate.self))
           EOF
       
       - name: Compile for iOS
@@ -397,7 +399,7 @@ jobs:
             -framework Foundation
           
           chmod +x build/Calculator
-          file build/Calculator
+          echo "✅ Compiled"
       
       - name: Create app bundle
         run: |
@@ -426,28 +428,22 @@ jobs:
               <string>1</string>
               <key>LSRequiresIPhoneOS</key>
               <true/>
-              <key>UIDeviceFamily</key>
-              <array><integer>1</integer></array>
           </dict>
           </plist>
           EOF
           
           echo "APPL????" > "$APP_PATH/PkgInfo"
-          
-          echo "=== Проверка ==="
-          ls -la "$APP_PATH"
-          file "$APP_PATH/Calculator"
+          echo "✅ App bundle created"
       
       - name: Create IPA
         run: |
           cd Payload
           zip -r ../Calculator.ipa .
           cd ..
-          echo "✅ IPA создан"
-          ls -la Calculator.ipa
+          echo "✅ IPA created"
       
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: FeatureCalculator
+          name: FullFeatureCalculator
           path: Calculator.ipa
