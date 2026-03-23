@@ -1,23 +1,68 @@
-name: Build Unsigned IPA
+name: Build IPA
 
 on:
+  push:
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: macos-latest
+    
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Build with Swift Package Manager
+      - name: Install provisioning profile
         run: |
-          swift build -c release --triple arm64-apple-ios
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp provision.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
+          echo "Profile installed"
+      
+      - name: Install certificate
+        run: |
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security import Certificate.p12 -k build.keychain -P ${{ secrets.P12_PASSWORD }} -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+          echo "Certificate installed"
+          security find-identity -v
+      
+      - name: Build with Swift Package Manager for iOS
+        run: |
+          # Указываем правильный SDK
+          swift build -c release \
+            --arch arm64 \
+            --destination <(echo '{"version": 1, "target": "arm64-apple-ios", "sdk": "iphoneos"}') \
+            -Xswiftc -sdk -Xswiftc $(xcrun --sdk iphoneos --show-sdk-path) \
+            -Xlinker -rpath -Xlinker /usr/lib/swift
+          
+          # Альтернативный способ: собираем через xcodebuild
+          xcodebuild build \
+            -scheme CalculatorApp \
+            -destination generic/platform=iOS \
+            -configuration Release \
+            CODE_SIGNING_ALLOWED=NO \
+            ONLY_ACTIVE_ARCH=NO
+      
+      - name: Find built binary
+        run: |
+          find . -name "CalculatorApp" -type f 2>/dev/null || echo "Binary not found"
       
       - name: Create app bundle
         run: |
           mkdir -p Payload/CalculatorApp.app
-          cp .build/arm64-apple-ios/release/CalculatorApp Payload/CalculatorApp.app/
+          
+          # Ищем бинарник в разных местах
+          if [ -f ".build/arm64-apple-ios/release/CalculatorApp" ]; then
+            cp .build/arm64-apple-ios/release/CalculatorApp Payload/CalculatorApp.app/
+          elif [ -f "build/Release-iphoneos/CalculatorApp" ]; then
+            cp build/Release-iphoneos/CalculatorApp Payload/CalculatorApp.app/
+          else
+            echo "Binary not found!"
+            exit 1
+          fi
           
           cat > Payload/CalculatorApp.app/Info.plist << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
@@ -38,16 +83,31 @@ jobs:
               <string>1</string>
               <key>LSRequiresIPhoneOS</key>
               <true/>
+              <key>UIRequiredDeviceCapabilities</key>
+              <array>
+                  <string>arm64</string>
+              </array>
           </dict>
           </plist>
           EOF
+          
+          echo "App bundle created"
+          ls -la Payload/CalculatorApp.app/
       
-      - name: Create IPA (unsigned)
+      - name: Sign app
         run: |
-          zip -r CalculatorApp-unsigned.ipa Payload
+          CERT_ID=$(security find-identity -v -p codesigning | grep "iPhone" | head -1 | awk -F '"' '{print $2}')
+          echo "Using certificate: $CERT_ID"
+          codesign -f -s "$CERT_ID" --entitlements - Payload/CalculatorApp.app
+          echo "App signed"
+      
+      - name: Create IPA
+        run: |
+          zip -r CalculatorApp.ipa Payload
+          echo "IPA created"
       
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: CalculatorApp-Unsigned
-          path: CalculatorApp-unsigned.ipa
+          name: CalculatorApp
+          path: CalculatorApp.ipa
