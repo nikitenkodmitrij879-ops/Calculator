@@ -1,0 +1,453 @@
+name: Feature Calculator IPA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Create Calculator App
+        run: |
+          cat > main.swift << 'EOF'
+          import UIKit
+          
+          @main
+          class AppDelegate: UIResponder, UIApplicationDelegate {
+              var window: UIWindow?
+              
+              func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+                  window = UIWindow(frame: UIScreen.main.bounds)
+                  window?.rootViewController = CalculatorViewController()
+                  window?.makeKeyAndVisible()
+                  return true
+              }
+          }
+          
+          class CalculatorViewController: UIViewController {
+              // Display
+              private var displayLabel: UILabel!
+              private var historyLabel: UILabel!
+              
+              // Calculator state
+              private var currentNumber = "0"
+              private var previousNumber: Double = 0
+              private var currentOperation: String? = nil
+              private var newNumber = true
+              private var decimalPlaces = 6
+              private var history: [String] = []
+              private var isLandscape = false
+              
+              // Scientific mode
+              private var isScientificMode = false
+              private var mainButtons: [UIButton] = []
+              private var sciButtons: [UIButton] = []
+              
+              override func viewDidLoad() {
+                  super.viewDidLoad()
+                  view.backgroundColor = .black
+                  setupDisplay()
+                  setupHistoryLabel()
+                  setupButtons()
+                  setupOrientationObserver()
+              }
+              
+              override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+                  super.viewWillTransition(to: size, with: coordinator)
+                  coordinator.animate(alongsideTransition: { _ in
+                      self.isLandscape = size.width > size.height
+                      self.updateButtonsLayout()
+                  })
+              }
+              
+              func setupOrientationObserver() {
+                  isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
+              }
+              
+              func setupDisplay() {
+                  displayLabel = UILabel()
+                  displayLabel.text = "0"
+                  displayLabel.textColor = .white
+                  displayLabel.font = UIFont.monospacedDigitSystemFont(ofSize: 64, weight: .light)
+                  displayLabel.textAlignment = .right
+                  displayLabel.translatesAutoresizingMaskIntoConstraints = false
+                  view.addSubview(displayLabel)
+                  
+                  NSLayoutConstraint.activate([
+                      displayLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+                      displayLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+                      displayLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
+                      displayLabel.heightAnchor.constraint(equalToConstant: 80)
+                  ])
+              }
+              
+              func setupHistoryLabel() {
+                  historyLabel = UILabel()
+                  historyLabel.text = ""
+                  historyLabel.textColor = .gray
+                  historyLabel.font = UIFont.monospacedDigitSystemFont(ofSize: 16, weight: .regular)
+                  historyLabel.textAlignment = .right
+                  historyLabel.numberOfLines = 2
+                  historyLabel.translatesAutoresizingMaskIntoConstraints = false
+                  view.addSubview(historyLabel)
+                  
+                  NSLayoutConstraint.activate([
+                      historyLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+                      historyLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+                      historyLabel.bottomAnchor.constraint(equalTo: displayLabel.topAnchor, constant: -8),
+                      historyLabel.heightAnchor.constraint(equalToConstant: 40)
+                  ])
+              }
+              
+              func setupButtons() {
+                  createMainButtons()
+                  createScientificButtons()
+                  updateButtonsLayout()
+              }
+              
+              func createMainButtons() {
+                  let mainTitles = [
+                      ["AC", "+/-", "%", "÷"],
+                      ["7", "8", "9", "×"],
+                      ["4", "5", "6", "-"],
+                      ["1", "2", "3", "+"],
+                      ["0", ".", "=", "科学"]
+                  ]
+                  
+                  for row in mainTitles {
+                      for title in row {
+                          let button = createButton(title: title)
+                          button.addTarget(self, action: #selector(buttonTapped(_:)), for: .touchUpInside)
+                          mainButtons.append(button)
+                          view.addSubview(button)
+                      }
+                  }
+              }
+              
+              func createScientificButtons() {
+                  let sciTitles = [
+                      ["sin", "cos", "tan", "√", "π"],
+                      ["log", "ln", "x²", "1/x", "!"],
+                      ["(", ")", "e", "xʸ", "←"],
+                      ["7", "8", "9", "÷", "AC"],
+                      ["4", "5", "6", "×", "%"],
+                      ["1", "2", "3", "-", "+/-"],
+                      ["0", ".", "=", "+", "科学"]
+                  ]
+                  
+                  for row in sciTitles {
+                      for title in row {
+                          let button = createButton(title: title)
+                          button.addTarget(self, action: #selector(scientificTapped(_:)), for: .touchUpInside)
+                          sciButtons.append(button)
+                          view.addSubview(button)
+                          button.isHidden = true
+                      }
+                  }
+              }
+              
+              func createButton(title: String) -> UIButton {
+                  let button = UIButton(type: .system)
+                  button.setTitle(title, for: .normal)
+                  button.setTitleColor(.white, for: .normal)
+                  button.titleLabel?.font = UIFont.systemFont(ofSize: title.count > 2 ? 20 : 28, weight: .medium)
+                  button.backgroundColor = buttonColor(for: title)
+                  button.layer.cornerRadius = 35
+                  button.translatesAutoresizingMaskIntoConstraints = false
+                  return button
+              }
+              
+              func buttonColor(for title: String) -> UIColor {
+                  if title == "÷" || title == "×" || title == "-" || title == "+" || title == "=" {
+                      return .orange
+                  } else if title == "AC" || title == "+/-" || title == "%" || title == "←" {
+                      return UIColor(white: 0.3, alpha: 1)
+                  } else if title == "科学" {
+                      return UIColor(white: 0.2, alpha: 1)
+                  } else if title.count > 2 {
+                      return UIColor(white: 0.25, alpha: 1)
+                  } else {
+                      return UIColor(white: 0.2, alpha: 1)
+                  }
+              }
+              
+              func updateButtonsLayout() {
+                  if isLandscape {
+                      showScientificMode(true)
+                  } else {
+                      showScientificMode(false)
+                  }
+              }
+              
+              func showScientificMode(_ show: Bool) {
+                  isScientificMode = show
+                  
+                  if show {
+                      for button in mainButtons { button.isHidden = true }
+                      for button in sciButtons { button.isHidden = false }
+                      layoutButtons(sciButtons)
+                  } else {
+                      for button in sciButtons { button.isHidden = true }
+                      for button in mainButtons { button.isHidden = false }
+                      layoutButtons(mainButtons)
+                  }
+              }
+              
+              func layoutButtons(_ buttons: [UIButton]) {
+                  let screenWidth = view.bounds.width
+                  let columns = isLandscape ? 5 : 4
+                  let spacing: CGFloat = 10
+                  let buttonHeight: CGFloat = 70
+                  let buttonWidth = (screenWidth - CGFloat(columns + 1) * spacing) / CGFloat(columns)
+                  
+                  var index = 0
+                  for button in buttons {
+                      let row = index / columns
+                      let col = index % columns
+                      let x = spacing + CGFloat(col) * (buttonWidth + spacing)
+                      let y = view.bounds.height - CGFloat(buttons.count / columns - row) * (buttonHeight + spacing) - 100
+                      
+                      var width = buttonWidth
+                      if button.title(for: .normal) == "0" {
+                          width = buttonWidth * 2 + spacing
+                      }
+                      
+                      button.frame = CGRect(x: x, y: y, width: width, height: buttonHeight)
+                      button.layer.cornerRadius = buttonHeight / 2
+                      index += 1
+                  }
+              }
+              
+              func formatValue(_ value: Double) -> String {
+                  if decimalPlaces == 0 {
+                      return String(format: "%.0f", value)
+                  }
+                  let formatted = String(format: "%.\(decimalPlaces)f", value)
+                  return formatted.replacingOccurrences(of: "\\.?0+$", with: "", options: .regularExpression)
+              }
+              
+              @objc func buttonTapped(_ sender: UIButton) {
+                  let title = sender.title(for: .normal) ?? ""
+                  
+                  if title == "科学" {
+                      showScientificMode(true)
+                      return
+                  }
+                  
+                  handleButton(title)
+              }
+              
+              @objc func scientificTapped(_ sender: UIButton) {
+                  let title = sender.title(for: .normal) ?? ""
+                  
+                  if title == "科学" {
+                      showScientificMode(false)
+                      return
+                  }
+                  
+                  handleScientificButton(title)
+              }
+              
+              func handleButton(_ label: String) {
+                  let generator = UIImpactFeedbackGenerator(style: .light)
+                  generator.impactOccurred()
+                  
+                  switch label {
+                  case "0","1","2","3","4","5","6","7","8","9":
+                      if newNumber {
+                          currentNumber = label
+                          newNumber = false
+                      } else {
+                          currentNumber = currentNumber == "0" ? label : currentNumber + label
+                      }
+                      displayLabel.text = currentNumber
+                      
+                  case ".":
+                      if newNumber {
+                          currentNumber = "0."
+                          newNumber = false
+                      } else if !currentNumber.contains(".") {
+                          currentNumber += "."
+                      }
+                      displayLabel.text = currentNumber
+                      
+                  case "÷", "×", "-", "+":
+                      if let value = Double(currentNumber) {
+                          previousNumber = value
+                          currentOperation = label
+                          newNumber = true
+                          historyLabel.text = "\(formatValue(previousNumber)) \(label)"
+                      }
+                      
+                  case "=":
+                      if let value = Double(currentNumber), let operation = currentOperation {
+                          var result: Double = 0
+                          switch operation {
+                          case "+": result = previousNumber + value
+                          case "-": result = previousNumber - value
+                          case "×": result = previousNumber * value
+                          case "÷": result = value != 0 ? previousNumber / value : 0
+                          default: break
+                          }
+                          
+                          let historyEntry = "\(formatValue(previousNumber)) \(operation) \(formatValue(value)) = \(formatValue(result))"
+                          history.append(historyEntry)
+                          historyLabel.text = historyEntry
+                          
+                          currentNumber = formatValue(result)
+                          displayLabel.text = currentNumber
+                          newNumber = true
+                          currentOperation = nil
+                      }
+                      
+                  case "AC":
+                      currentNumber = "0"
+                      previousNumber = 0
+                      currentOperation = nil
+                      newNumber = true
+                      displayLabel.text = "0"
+                      historyLabel.text = ""
+                      
+                  case "+/-":
+                      if let value = Double(currentNumber) {
+                          currentNumber = String(value * -1)
+                          displayLabel.text = currentNumber
+                      }
+                      
+                  case "%":
+                      if let value = Double(currentNumber) {
+                          currentNumber = String(value / 100)
+                          displayLabel.text = currentNumber
+                      }
+                      
+                  default:
+                      break
+                  }
+              }
+              
+              func handleScientificButton(_ label: String) {
+                  let generator = UIImpactFeedbackGenerator(style: .light)
+                  generator.impactOccurred()
+                  
+                  guard let value = Double(currentNumber) else { return }
+                  var result: Double = 0
+                  
+                  switch label {
+                  case "sin": result = sin(value * .pi / 180)
+                  case "cos": result = cos(value * .pi / 180)
+                  case "tan": result = tan(value * .pi / 180)
+                  case "√": result = value >= 0 ? sqrt(value) : 0
+                  case "π": result = Double.pi
+                  case "log": result = value > 0 ? log10(value) : 0
+                  case "ln": result = value > 0 ? log(value) : 0
+                  case "x²": result = value * value
+                  case "1/x": result = value != 0 ? 1 / value : 0
+                  case "xʸ":
+                      if let op = currentOperation, op == "xʸ" {
+                          result = pow(previousNumber, value)
+                          currentOperation = nil
+                      } else {
+                          previousNumber = value
+                          currentOperation = "xʸ"
+                          newNumber = true
+                          return
+                      }
+                  case "←":
+                      if currentNumber.count > 1 {
+                          currentNumber = String(currentNumber.dropLast())
+                      } else {
+                          currentNumber = "0"
+                      }
+                      displayLabel.text = currentNumber
+                      return
+                  case "e": result = M_E
+                  case "!":
+                      var fact: Double = 1
+                      for i in 1...Int(value) { fact *= Double(i) }
+                      result = fact
+                  default:
+                      handleButton(label)
+                      return
+                  }
+                  
+                  let formatted = formatValue(result)
+                  history.append("\(label}(\(currentNumber)) = \(formatted)")
+                  currentNumber = formatted
+                  displayLabel.text = formatted
+                  newNumber = true
+              }
+          }
+          EOF
+      
+      - name: Compile for iOS
+        run: |
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          mkdir -p build
+          
+          swiftc main.swift \
+            -sdk "$SDK" \
+            -target arm64-apple-ios15.0 \
+            -o build/Calculator \
+            -emit-executable \
+            -framework UIKit \
+            -framework Foundation
+          
+          chmod +x build/Calculator
+          file build/Calculator
+      
+      - name: Create app bundle
+        run: |
+          APP_PATH="Payload/Calculator.app"
+          mkdir -p "$APP_PATH"
+          cp build/Calculator "$APP_PATH/Calculator"
+          
+          cat > "$APP_PATH/Info.plist" << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>Calculator</string>
+              <key>CFBundleIdentifier</key>
+              <string>4PRJCD67F5.app.panda639.papaya6365</string>
+              <key>CFBundleName</key>
+              <string>Calc</string>
+              <key>CFBundleDisplayName</key>
+              <string>Калькулятор</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleShortVersionString</key>
+              <string>1.0</string>
+              <key>CFBundleVersion</key>
+              <string>1</string>
+              <key>LSRequiresIPhoneOS</key>
+              <true/>
+              <key>UIDeviceFamily</key>
+              <array><integer>1</integer></array>
+          </dict>
+          </plist>
+          EOF
+          
+          echo "APPL????" > "$APP_PATH/PkgInfo"
+          
+          echo "=== Проверка ==="
+          ls -la "$APP_PATH"
+          file "$APP_PATH/Calculator"
+      
+      - name: Create IPA
+        run: |
+          cd Payload
+          zip -r ../Calculator.ipa .
+          cd ..
+          echo "✅ IPA создан"
+          ls -la Calculator.ipa
+      
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: FeatureCalculator
+          path: Calculator.ipa
