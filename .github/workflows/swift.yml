@@ -1,22 +1,75 @@
-# This workflow will build a Swift project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-swift
-
-name: Swift
+name: Build IPA
 
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
   build:
-
     runs-on: macos-latest
-
+    
     steps:
-    - uses: actions/checkout@v4
-    - name: Build
-      run: swift build -v
-    - name: Run tests
-      run: swift test -v
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install provisioning profile
+        run: |
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp provision.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
+      
+      - name: Install certificate
+        run: |
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security import Certificate.p12 -k build.keychain -P ${{ secrets.P12_PASSWORD }} -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+      
+      - name: Build with Swift Package Manager
+        run: |
+          swift build -c release --triple arm64-apple-ios
+      
+      - name: Create app bundle
+        run: |
+          mkdir -p Payload/CalculatorApp.app
+          cp .build/arm64-apple-ios/release/CalculatorApp Payload/CalculatorApp.app/
+          
+          cat > Payload/CalculatorApp.app/Info.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>CalculatorApp</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.example.calculator</string>
+              <key>CFBundleName</key>
+              <string>Calculator</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleShortVersionString</key>
+              <string>1.0</string>
+              <key>CFBundleVersion</key>
+              <string>1</string>
+              <key>LSRequiresIPhoneOS</key>
+              <true/>
+          </dict>
+          </plist>
+          EOF
+      
+      - name: Sign app
+        run: |
+          CERT_ID=$(security find-identity -v -p codesigning | grep "iPhone" | head -1 | awk -F '"' '{print $2}')
+          echo "Using certificate: $CERT_ID"
+          codesign -f -s "$CERT_ID" Payload/CalculatorApp.app
+      
+      - name: Create IPA
+        run: |
+          zip -r CalculatorApp.ipa Payload
+      
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: CalculatorApp
+          path: CalculatorApp.ipa
