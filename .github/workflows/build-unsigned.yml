@@ -1,0 +1,210 @@
+name: Build Unsigned IPA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Create main.swift
+        run: |
+          mkdir -p Sources
+          cat > Sources/main.swift << 'EOF'
+          import Foundation
+          
+          print("╔══════════════════════════════════╗")
+          print("║       КАЛЬКУЛЯТОР v1.0           ║")
+          print("╚══════════════════════════════════╝")
+          print("")
+          print("Введите выражение (например: 5 + 3)")
+          print("Команды: exit - выход, clear - очистить")
+          print("")
+          
+          while true {
+              print("> ", terminator: "")
+              guard let input = readLine()?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+                  continue
+              }
+              
+              if input.lowercased() == "exit" {
+                  print("До свидания!")
+                  break
+              }
+              
+              if input.lowercased() == "clear" {
+                  print("\n" * 20)
+                  continue
+              }
+              
+              if input.isEmpty {
+                  continue
+              }
+              
+              let parts = input.split(separator: " ").map(String.init)
+              
+              if parts.count == 3 {
+                  guard let a = Double(parts[0]) else {
+                      print("❌ Ошибка: '\(parts[0])' не число")
+                      continue
+                  }
+                  
+                  let op = parts[1]
+                  
+                  guard let b = Double(parts[2]) else {
+                      print("❌ Ошибка: '\(parts[2])' не число")
+                      continue
+                  }
+                  
+                  var result: Double?
+                  
+                  switch op {
+                  case "+":
+                      result = a + b
+                  case "-":
+                      result = a - b
+                  case "*":
+                      result = a * b
+                  case "/":
+                      if b != 0 {
+                          result = a / b
+                      } else {
+                          print("❌ Ошибка: деление на ноль")
+                          continue
+                      }
+                  default:
+                      print("❌ Ошибка: операция '\(op)' не поддерживается")
+                      print("   Доступные операции: +, -, *, /")
+                      continue
+                  }
+                  
+                  if let res = result {
+                      if res.truncatingRemainder(dividingBy: 1) == 0 {
+                          print("✅ Результат: \(Int(res))")
+                      } else {
+                          print("✅ Результат: \(String(format: "%.6f", res).replacingOccurrences(of: "\\.?0+$", with: "", options: .regularExpression))")
+                      }
+                  }
+              } else {
+                  print("❌ Ошибка: используйте формат 'число оператор число'")
+                  print("   Пример: 10 + 5")
+              }
+          }
+          EOF
+          
+          echo "main.swift создан"
+          cat Sources/main.swift | head -5
+      
+      - name: Create Package.swift
+        run: |
+          cat > Package.swift << 'EOF'
+          // swift-tools-version:5.7
+          import PackageDescription
+          
+          let package = Package(
+              name: "CalculatorApp",
+              platforms: [
+                  .iOS(.v13)
+              ],
+              targets: [
+                  .executableTarget(
+                      name: "CalculatorApp",
+                      path: "Sources"
+                  )
+              ]
+          )
+          EOF
+          
+          echo "Package.swift создан"
+      
+      - name: Build for iOS
+        run: |
+          # Находим SDK
+          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+          echo "SDK Path: $SDK_PATH"
+          
+          # Компилируем напрямую
+          mkdir -p build
+          
+          swiftc Sources/main.swift \
+            -sdk "$SDK_PATH" \
+            -target arm64-apple-ios13.0 \
+            -o build/CalculatorApp \
+            -emit-executable \
+            -O
+          
+          if [ -f "build/CalculatorApp" ]; then
+            echo "✅ Компиляция успешна!"
+            ls -la build/CalculatorApp
+          else
+            echo "❌ Ошибка компиляции"
+            exit 1
+          fi
+      
+      - name: Create app bundle
+        run: |
+          mkdir -p Payload/CalculatorApp.app
+          
+          # Копируем бинарник
+          cp build/CalculatorApp Payload/CalculatorApp.app/CalculatorApp
+          
+          # Создаем Info.plist
+          cat > Payload/CalculatorApp.app/Info.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>CalculatorApp</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.calculator.app</string>
+              <key>CFBundleName</key>
+              <string>Calculator</string>
+              <key>CFBundleDisplayName</key>
+              <string>Калькулятор</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleShortVersionString</key>
+              <string>1.0</string>
+              <key>CFBundleVersion</key>
+              <string>1</string>
+              <key>CFBundleDevelopmentRegion</key>
+              <string>ru</string>
+              <key>LSRequiresIPhoneOS</key>
+              <true/>
+              <key>UIRequiredDeviceCapabilities</key>
+              <array>
+                  <string>arm64</string>
+              </array>
+              <key>UISupportedInterfaceOrientations</key>
+              <array>
+                  <string>UIInterfaceOrientationPortrait</string>
+              </array>
+          </dict>
+          </plist>
+          EOF
+          
+          # Создаем PkgInfo
+          echo "APPL????" > Payload/CalculatorApp.app/PkgInfo
+          
+          echo "✅ App bundle создан"
+          ls -la Payload/CalculatorApp.app/
+      
+      - name: Create IPA
+        run: |
+          cd Payload
+          zip -r ../CalculatorApp.ipa .
+          cd ..
+          echo "✅ IPA создан"
+          ls -la CalculatorApp.ipa
+      
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: CalculatorApp-Unsigned
+          path: CalculatorApp.ipa
+          retention-days: 30
