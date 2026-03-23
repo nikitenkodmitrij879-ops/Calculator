@@ -1,4 +1,4 @@
-name: Full Feature Calculator IPA
+name: Final Working Calculator
 
 on:
   workflow_dispatch:
@@ -11,403 +11,259 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       
-      - name: Create Calculator App
+      - name: Create Simple UI Calculator
         run: |
           cat > main.swift << 'EOF'
           import UIKit
           
+          @UIApplicationMain
           class AppDelegate: UIResponder, UIApplicationDelegate {
               var window: UIWindow?
               
               func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
                   window = UIWindow(frame: UIScreen.main.bounds)
-                  window?.rootViewController = CalculatorViewController()
+                  window?.rootViewController = CalculatorVC()
                   window?.makeKeyAndVisible()
                   return true
               }
           }
           
-          class CalculatorViewController: UIViewController {
-              private var displayLabel: UILabel!
-              private var historyLabel: UILabel!
-              private var currentNumber = "0"
-              private var previousNumber: Double = 0
-              private var currentOperation: String?
-              private var newNumber = true
-              private var decimalPlaces = 6
-              private var isLandscape = false
-              private var isScientificMode = false
-              private var mainButtons: [UIButton] = []
-              private var sciButtons: [UIButton] = []
-              private var pendingPower: Double = 0
+          class CalculatorVC: UIViewController {
+              var displayLabel: UILabel!
+              var historyLabel: UILabel!
+              var currentNumber = "0"
+              var previousNumber: Double = 0
+              var operation: String?
+              var newNumber = true
+              var isScientific = false
+              var mainButtons: [UIButton] = []
+              var sciButtons: [UIButton] = []
               
               override func viewDidLoad() {
                   super.viewDidLoad()
                   view.backgroundColor = .black
                   setupDisplay()
-                  setupHistoryLabel()
-                  createMainButtons()
-                  createScientificButtons()
-                  setupOrientationObserver()
-                  updateButtonsLayout()
-              }
-              
-              override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
-                  super.viewWillTransition(to: size, with: coordinator)
-                  coordinator.animate(alongsideTransition: { _ in
-                      self.isLandscape = size.width > size.height
-                      self.updateButtonsLayout()
-                  })
-              }
-              
-              func setupOrientationObserver() {
-                  isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
+                  createButtons()
+                  layoutButtons()
+                  
+                  NotificationCenter.default.addObserver(self, selector: #selector(rotated), name: UIDevice.orientationDidChangeNotification, object: nil)
               }
               
               func setupDisplay() {
-                  displayLabel = UILabel()
+                  displayLabel = UILabel(frame: CGRect(x: 20, y: 100, width: UIScreen.main.bounds.width - 40, height: 80))
                   displayLabel.text = "0"
                   displayLabel.textColor = .white
-                  displayLabel.font = UIFont.monospacedDigitSystemFont(ofSize: 64, weight: .light)
+                  displayLabel.font = .monospacedDigitSystemFont(ofSize: 64, weight: .light)
                   displayLabel.textAlignment = .right
-                  displayLabel.translatesAutoresizingMaskIntoConstraints = false
                   view.addSubview(displayLabel)
                   
-                  NSLayoutConstraint.activate([
-                      displayLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-                      displayLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-                      displayLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
-                      displayLabel.heightAnchor.constraint(equalToConstant: 80)
-                  ])
-              }
-              
-              func setupHistoryLabel() {
-                  historyLabel = UILabel()
-                  historyLabel.text = ""
+                  historyLabel = UILabel(frame: CGRect(x: 20, y: 60, width: UIScreen.main.bounds.width - 40, height: 30))
                   historyLabel.textColor = .gray
-                  historyLabel.font = UIFont.monospacedDigitSystemFont(ofSize: 14, weight: .regular)
+                  historyLabel.font = .systemFont(ofSize: 14)
                   historyLabel.textAlignment = .right
-                  historyLabel.numberOfLines = 2
-                  historyLabel.translatesAutoresizingMaskIntoConstraints = false
                   view.addSubview(historyLabel)
-                  
-                  NSLayoutConstraint.activate([
-                      historyLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-                      historyLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-                      historyLabel.bottomAnchor.constraint(equalTo: displayLabel.topAnchor, constant: -8),
-                      historyLabel.heightAnchor.constraint(equalToConstant: 40)
-                  ])
               }
               
-              func createMainButtons() {
+              func createButtons() {
                   let mainTitles = [
                       ["AC", "+/-", "%", "÷"],
                       ["7", "8", "9", "×"],
                       ["4", "5", "6", "-"],
                       ["1", "2", "3", "+"],
-                      ["0", ".", "=", "🔬"]
+                      ["0", ".", "=", "Sci"]
                   ]
                   
                   for row in mainTitles {
                       for title in row {
-                          let button = createButton(title: title)
-                          button.addTarget(self, action: #selector(buttonTapped(_:)), for: .touchUpInside)
-                          mainButtons.append(button)
-                          view.addSubview(button)
+                          let btn = makeButton(title)
+                          btn.addTarget(self, action: #selector(tap(_:)), for: .touchUpInside)
+                          mainButtons.append(btn)
+                          view.addSubview(btn)
                       }
                   }
-              }
-              
-              func createScientificButtons() {
+                  
                   let sciTitles = [
                       ["sin", "cos", "tan", "√", "π"],
                       ["log", "ln", "x²", "1/x", "!"],
-                      ["e", "xʸ", "(", ")", "←"],
+                      ["e", "^", "(", ")", "←"],
                       ["7", "8", "9", "÷", "AC"],
                       ["4", "5", "6", "×", "%"],
                       ["1", "2", "3", "-", "+/-"],
-                      ["0", ".", "=", "+", "🔬"]
+                      ["0", ".", "=", "+", "Main"]
                   ]
                   
                   for row in sciTitles {
                       for title in row {
-                          let button = createButton(title: title)
-                          button.addTarget(self, action: #selector(scientificTapped(_:)), for: .touchUpInside)
-                          sciButtons.append(button)
-                          view.addSubview(button)
-                          button.isHidden = true
+                          let btn = makeButton(title)
+                          btn.addTarget(self, action: #selector(sciTap(_:)), for: .touchUpInside)
+                          sciButtons.append(btn)
+                          view.addSubview(btn)
+                          btn.isHidden = true
                       }
                   }
               }
               
-              func createButton(title: String) -> UIButton {
-                  let button = UIButton(type: .system)
-                  button.setTitle(title, for: .normal)
-                  button.setTitleColor(.white, for: .normal)
-                  button.titleLabel?.font = UIFont.systemFont(ofSize: title.count > 2 ? 18 : 28, weight: .medium)
-                  button.backgroundColor = buttonColor(for: title)
-                  button.layer.cornerRadius = 35
-                  button.translatesAutoresizingMaskIntoConstraints = false
-                  return button
+              func makeButton(_ title: String) -> UIButton {
+                  let btn = UIButton(type: .system)
+                  btn.setTitle(title, for: .normal)
+                  btn.setTitleColor(.white, for: .normal)
+                  btn.titleLabel?.font = .systemFont(ofSize: title.count > 2 ? 18 : 28, weight: .medium)
+                  btn.backgroundColor = colorFor(title)
+                  btn.layer.cornerRadius = 35
+                  return btn
               }
               
-              func buttonColor(for title: String) -> UIColor {
-                  if title == "÷" || title == "×" || title == "-" || title == "+" || title == "=" {
-                      return .orange
-                  } else if title == "AC" || title == "+/-" || title == "%" || title == "←" {
-                      return UIColor(white: 0.3, alpha: 1)
-                  } else if title == "🔬" {
-                      return UIColor(white: 0.2, alpha: 1)
-                  } else if title.count > 2 && title != "🔬" {
-                      return UIColor(white: 0.25, alpha: 1)
-                  } else {
-                      return UIColor(white: 0.2, alpha: 1)
-                  }
+              func colorFor(_ title: String) -> UIColor {
+                  if title == "÷" || title == "×" || title == "-" || title == "+" || title == "=" { return .orange }
+                  if title == "AC" || title == "+/-" || title == "%" || title == "←" { return UIColor(white: 0.3, alpha: 1) }
+                  if title == "Sci" || title == "Main" { return UIColor(white: 0.2, alpha: 1) }
+                  if title.count > 2 { return UIColor(white: 0.25, alpha: 1) }
+                  return UIColor(white: 0.2, alpha: 1)
               }
               
-              func updateButtonsLayout() {
-                  if isLandscape {
-                      showScientificMode(true)
-                  } else {
-                      showScientificMode(false)
-                  }
+              @objc func rotated() {
+                  layoutButtons()
               }
               
-              func showScientificMode(_ show: Bool) {
-                  isScientificMode = show
+              func layoutButtons() {
+                  let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
                   
-                  if show {
-                      for button in mainButtons { button.isHidden = true }
-                      for button in sciButtons { button.isHidden = false }
-                      layoutButtons(sciButtons, columns: 5)
+                  if isScientific {
+                      for b in mainButtons { b.isHidden = true }
+                      for b in sciButtons { b.isHidden = false }
+                      layoutGrid(sciButtons, cols: 5, isLandscape: isLandscape)
                   } else {
-                      for button in sciButtons { button.isHidden = true }
-                      for button in mainButtons { button.isHidden = false }
-                      layoutButtons(mainButtons, columns: 4)
+                      for b in sciButtons { b.isHidden = true }
+                      for b in mainButtons { b.isHidden = false }
+                      layoutGrid(mainButtons, cols: 4, isLandscape: isLandscape)
                   }
               }
               
-              func layoutButtons(_ buttons: [UIButton], columns: Int) {
-                  let screenWidth = view.bounds.width
+              func layoutGrid(_ buttons: [UIButton], cols: Int, isLandscape: Bool) {
+                  let w = view.bounds.width
                   let spacing: CGFloat = 10
-                  let buttonHeight: CGFloat = 65
-                  let buttonWidth = (screenWidth - CGFloat(columns + 1) * spacing) / CGFloat(columns)
+                  let btnH: CGFloat = isLandscape ? 55 : 70
+                  let btnW = (w - CGFloat(cols + 1) * spacing) / CGFloat(cols)
+                  let startY = view.bounds.height - CGFloat(buttons.count / cols) * (btnH + spacing) - 100
                   
-                  for (index, button) in buttons.enumerated() {
-                      let row = index / columns
-                      let col = index % columns
-                      let x = spacing + CGFloat(col) * (buttonWidth + spacing)
-                      let y = view.bounds.height - CGFloat(buttons.count / columns - row) * (buttonHeight + spacing) - 80
-                      
-                      var width = buttonWidth
-                      if button.title(for: .normal) == "0" {
-                          width = buttonWidth * 2 + spacing
-                      }
-                      
-                      button.frame = CGRect(x: x, y: y, width: width, height: buttonHeight)
-                      button.layer.cornerRadius = buttonHeight / 2
+                  for (i, btn) in buttons.enumerated() {
+                      let row = i / cols
+                      let col = i % cols
+                      let x = spacing + CGFloat(col) * (btnW + spacing)
+                      let y = startY + CGFloat(row) * (btnH + spacing)
+                      var ww = btnW
+                      if btn.title(for: .normal) == "0" { ww = btnW * 2 + spacing }
+                      btn.frame = CGRect(x: x, y: y, width: ww, height: btnH)
+                      btn.layer.cornerRadius = btnH / 2
                   }
               }
               
-              func formatValue(_ value: Double) -> String {
-                  if decimalPlaces == 0 {
-                      return String(format: "%.0f", value)
-                  }
-                  let formatted = String(format: "%.\(decimalPlaces)f", value)
-                  return formatted.replacingOccurrences(of: "\\.?0+$", with: "", options: .regularExpression)
+              func format(_ v: Double) -> String {
+                  let s = String(format: "%.6f", v)
+                  return s.replacingOccurrences(of: "\\.?0+$", with: "", options: .regularExpression)
               }
               
-              @objc func buttonTapped(_ sender: UIButton) {
-                  let title = sender.title(for: .normal) ?? ""
-                  
-                  if title == "🔬" {
-                      showScientificMode(true)
-                      return
-                  }
-                  
-                  handleButton(title)
+              @objc func tap(_ sender: UIButton) {
+                  let label = sender.title(for: .normal) ?? ""
+                  if label == "Sci" { isScientific = true; layoutButtons(); return }
+                  handle(label)
               }
               
-              @objc func scientificTapped(_ sender: UIButton) {
-                  let title = sender.title(for: .normal) ?? ""
-                  
-                  if title == "🔬" {
-                      showScientificMode(false)
-                      return
-                  }
-                  
-                  handleScientificButton(title)
+              @objc func sciTap(_ sender: UIButton) {
+                  let label = sender.title(for: .normal) ?? ""
+                  if label == "Main" { isScientific = false; layoutButtons(); return }
+                  handleScientific(label)
               }
               
-              func handleButton(_ label: String) {
-                  let generator = UIImpactFeedbackGenerator(style: .light)
-                  generator.impactOccurred()
+              func handle(_ label: String) {
+                  UIImpactFeedbackGenerator(style: .light).impactOccurred()
                   
                   switch label {
-                  case "0","1","2","3","4","5","6","7","8","9":
-                      if newNumber {
-                          currentNumber = label
-                          newNumber = false
-                      } else {
-                          currentNumber = currentNumber == "0" ? label : currentNumber + label
-                      }
+                  case "0"..."9":
+                      if newNumber { currentNumber = label; newNumber = false }
+                      else { currentNumber = currentNumber == "0" ? label : currentNumber + label }
                       displayLabel.text = currentNumber
-                      
                   case ".":
-                      if newNumber {
-                          currentNumber = "0."
-                          newNumber = false
-                      } else if !currentNumber.contains(".") {
-                          currentNumber += "."
-                      }
+                      if newNumber { currentNumber = "0."; newNumber = false }
+                      else if !currentNumber.contains(".") { currentNumber += "." }
                       displayLabel.text = currentNumber
-                      
-                  case "÷", "×", "-", "+":
-                      if let value = Double(currentNumber) {
-                          previousNumber = value
-                          currentOperation = label
-                          newNumber = true
-                          historyLabel.text = "\(formatValue(previousNumber)) \(label)"
-                      }
-                      
+                  case "÷","×","-","+":
+                      if let v = Double(currentNumber) { previousNumber = v; operation = label; newNumber = true }
                   case "=":
-                      if let value = Double(currentNumber), let operation = currentOperation {
-                          var result: Double = 0
-                          switch operation {
-                          case "+": result = previousNumber + value
-                          case "-": result = previousNumber - value
-                          case "×": result = previousNumber * value
-                          case "÷": result = value != 0 ? previousNumber / value : 0
+                      if let v = Double(currentNumber), let op = operation {
+                          var r: Double = 0
+                          switch op {
+                          case "+": r = previousNumber + v
+                          case "-": r = previousNumber - v
+                          case "×": r = previousNumber * v
+                          case "÷": r = v != 0 ? previousNumber / v : 0
                           default: break
                           }
-                          
-                          let historyEntry = "\(formatValue(previousNumber)) \(operation) \(formatValue(value)) = \(formatValue(result))"
-                          historyLabel.text = historyEntry
-                          
-                          currentNumber = formatValue(result)
+                          historyLabel.text = "\(format(previousNumber)) \(op) \(format(v)) = \(format(r))"
+                          currentNumber = format(r)
                           displayLabel.text = currentNumber
                           newNumber = true
-                          currentOperation = nil
+                          operation = nil
                       }
-                      
-                  case "AC":
-                      currentNumber = "0"
-                      previousNumber = 0
-                      currentOperation = nil
-                      newNumber = true
-                      displayLabel.text = "0"
-                      historyLabel.text = ""
-                      
-                  case "+/-":
-                      if let value = Double(currentNumber) {
-                          currentNumber = String(value * -1)
-                          displayLabel.text = currentNumber
-                      }
-                      
-                  case "%":
-                      if let value = Double(currentNumber) {
-                          currentNumber = String(value / 100)
-                          displayLabel.text = currentNumber
-                      }
-                      
-                  default:
-                      break
+                  case "AC": currentNumber = "0"; previousNumber = 0; operation = nil; newNumber = true; displayLabel.text = "0"; historyLabel.text = ""
+                  case "+/-": if let v = Double(currentNumber) { currentNumber = String(v * -1); displayLabel.text = currentNumber }
+                  case "%": if let v = Double(currentNumber) { currentNumber = String(v / 100); displayLabel.text = currentNumber }
+                  default: break
                   }
               }
               
-              func handleScientificButton(_ label: String) {
-                  let generator = UIImpactFeedbackGenerator(style: .light)
-                  generator.impactOccurred()
-                  
-                  guard let value = Double(currentNumber) else { return }
-                  var result: Double = 0
-                  var operationName = label
+              func handleScientific(_ label: String) {
+                  UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                  guard let v = Double(currentNumber) else { return }
+                  var r: Double = 0
                   
                   switch label {
-                  case "sin": result = sin(value * .pi / 180); operationName = "sin"
-                  case "cos": result = cos(value * .pi / 180); operationName = "cos"
-                  case "tan": result = tan(value * .pi / 180); operationName = "tan"
-                  case "√": result = value >= 0 ? sqrt(value) : 0; operationName = "√"
-                  case "π": result = Double.pi; operationName = "π"
-                  case "log": result = value > 0 ? log10(value) : 0; operationName = "log"
-                  case "ln": result = value > 0 ? log(value) : 0; operationName = "ln"
-                  case "x²": result = value * value; operationName = "x²"
-                  case "1/x": result = value != 0 ? 1 / value : 0; operationName = "1/x"
+                  case "sin": r = sin(v * .pi / 180)
+                  case "cos": r = cos(v * .pi / 180)
+                  case "tan": r = tan(v * .pi / 180)
+                  case "√": r = v >= 0 ? sqrt(v) : 0
+                  case "π": r = Double.pi
+                  case "log": r = v > 0 ? log10(v) : 0
+                  case "ln": r = v > 0 ? log(v) : 0
+                  case "x²": r = v * v
+                  case "1/x": r = v != 0 ? 1 / v : 0
                   case "!":
-                      var fact: Double = 1
-                      for i in 1...Int(value) { fact *= Double(i) }
-                      result = fact
-                      operationName = "!"
-                  case "e": result = M_E; operationName = "e"
-                  case "xʸ":
-                      if currentOperation == "xʸ" {
-                          result = pow(previousNumber, value)
-                          currentOperation = nil
-                          operationName = "xʸ"
-                      } else {
-                          previousNumber = value
-                          currentOperation = "xʸ"
-                          newNumber = true
-                          historyLabel.text = "\(formatValue(previousNumber)) ^"
-                          return
-                      }
+                      var f: Double = 1
+                      for i in 1...Int(v) { f *= Double(i) }
+                      r = f
+                  case "e": r = M_E
+                  case "^":
+                      if operation == "^" { r = pow(previousNumber, v); operation = nil }
+                      else { previousNumber = v; operation = "^"; newNumber = true; return }
                   case "←":
-                      if currentNumber.count > 1 {
-                          currentNumber = String(currentNumber.dropLast())
-                      } else {
-                          currentNumber = "0"
-                      }
+                      if currentNumber.count > 1 { currentNumber = String(currentNumber.dropLast()) }
+                      else { currentNumber = "0" }
                       displayLabel.text = currentNumber
                       return
-                  case "(":
-                      currentNumber = "("
-                      newNumber = true
-                      return
-                  case ")":
-                      currentNumber = ")"
-                      newNumber = true
-                      return
-                  default:
-                      handleButton(label)
-                      return
+                  default: handle(label); return
                   }
                   
-                  let formatted = formatValue(result)
-                  let historyEntry = "\(operationName)(\(currentNumber)) = \(formatted)"
-                  historyLabel.text = historyEntry
-                  
-                  currentNumber = formatted
-                  displayLabel.text = formatted
+                  historyLabel.text = "\(label)(\(currentNumber)) = \(format(r))"
+                  currentNumber = format(r)
+                  displayLabel.text = currentNumber
                   newNumber = true
               }
           }
-          
-          UIApplicationMain(CommandLine.argc, CommandLine.unsafeArgv, nil, NSStringFromClass(AppDelegate.self))
           EOF
       
-      - name: Compile for iOS
+      - name: Compile
         run: |
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
           mkdir -p build
-          
-          swiftc main.swift \
-            -sdk "$SDK" \
-            -target arm64-apple-ios15.0 \
-            -o build/Calculator \
-            -emit-executable \
-            -framework UIKit \
-            -framework Foundation
-          
+          swiftc main.swift -sdk "$SDK" -target arm64-apple-ios15.0 -o build/Calculator -emit-executable -framework UIKit -framework Foundation
           chmod +x build/Calculator
-          echo "✅ Compiled"
       
-      - name: Create app bundle
+      - name: Create IPA
         run: |
-          APP_PATH="Payload/Calculator.app"
-          mkdir -p "$APP_PATH"
-          cp build/Calculator "$APP_PATH/Calculator"
+          mkdir -p Payload/Calculator.app
+          cp build/Calculator Payload/Calculator.app/Calculator
           
-          cat > "$APP_PATH/Info.plist" << 'EOF'
+          cat > Payload/Calculator.app/Info.plist << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -432,18 +288,11 @@ jobs:
           </plist>
           EOF
           
-          echo "APPL????" > "$APP_PATH/PkgInfo"
-          echo "✅ App bundle created"
+          echo "APPL????" > Payload/Calculator.app/PkgInfo
+          cd Payload && zip -r ../Calculator.ipa . && cd ..
       
-      - name: Create IPA
-        run: |
-          cd Payload
-          zip -r ../Calculator.ipa .
-          cd ..
-          echo "✅ IPA created"
-      
-      - name: Upload IPA
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: FullFeatureCalculator
+          name: Calculator
           path: Calculator.ipa
